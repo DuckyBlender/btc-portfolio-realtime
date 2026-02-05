@@ -1,0 +1,36 @@
+services:
+  btc-tracker:
+    build: .
+    container_name: btc-portfolio-tracker
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - btc-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: btc-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - btc-tracker
+    networks:
+      - btc-network
+
+networks:
+  btc-network:
+    driver: bridge

@@ -11,6 +11,8 @@ Privacy-first: your XPUB stays in your browser. Addresses never leave your devic
 - Support for XPUB/YPUB/ZPUB or single addresses (bc1, 1, 3)
 - Real-time balance via Electrum
 - Toggle BTC ↔ sats, USD ↔ EUR
+- BTC Accumulation Chart
+- Timeframe filters (1h, 1d, 1w, 1m, 1y, 5y, max)
 - Auto-reconnect on page refresh
 
 ## Dev
@@ -37,7 +39,13 @@ Server only sees script hashes. Your XPUB is safe.
 - Electrum: electrum.blockstream.info:50002 (SSL on)
 - Change this in the UI if you want a different server
 
+## Todo
+
+- [x] BTC Accumulation Chart
+- [ ] BTC Price Chart
+- [ ] Export/Share Portfolio (without revealing XPUB)
+
 ## Tech
 
-SvelteKit 5, TypeScript, TailwindCSS, Kraken API, bitcoinjs-lib
+SvelteKit 5, TypeScript, TailwindCSS, Kraken API, bitcoinjs-lib, Chart.js
 

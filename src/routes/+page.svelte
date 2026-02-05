@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { getKrakenPriceService, type KrakenPrices } from '$lib/services/kraken';
 	import Footer from '$lib/components/Footer.svelte';
+	import AccumulationChart from '$lib/components/AccumulationChart.svelte';
 	import {
 		validateXPUB,
 		validateAddress,
@@ -28,6 +29,7 @@
 	let addressCount = $state(50);
 	let isConnected = $state(false);
 	let isLoading = $state(false);
+	let loadingStatus = $state('');
 	let error = $state<string | null>(null);
 	let showAddresses = $state(true);
 	let hideEmpty = $state(true);
@@ -45,6 +47,10 @@
 
 	// Balance data
 	let btcBalance = $state(0);
+	let historyData = $state<{ timestamp: number; date: string; cumulativeBtc: number; deltaSats: number; txHash: string; blockHeight: number }[]>([]);
+	let historyLoading = $state(false);
+	let historyError = $state<string | null>(null);
+	let showChart = $state(true);
 	let usdPrice = $state(0);
 	let plnPrice = $state(0);
 	let eurPrice = $state(0);
@@ -90,6 +96,7 @@
 	async function connectAndLoad() {
 		error = null;
 		isLoading = true;
+		loadingStatus = 'Validating input...';
 
 		try {
 			const detectedType = detectInputType(xpubInput);
@@ -101,21 +108,16 @@
 				if (!validation.isValid) {
 					throw new Error(validation.error);
 				}
-				addresses = [singleAddressToDerivied(xpubInput)];
-				console.log('[BTC Tracker] Single address mode:', xpubInput);
+				loadingStatus = 'Processing address...';
+				addresses = [singleAddressToDerivied(xpubInput)];				
 			} else if (detectedType === 'xpub') {
 				// XPUB mode
 				const validation = validateXPUB(xpubInput);
 				if (!validation.isValid) {
 					throw new Error(validation.error);
 				}
+				loadingStatus = `Deriving ${addressCount * 2} addresses...`;
 				addresses = deriveAddresses(xpubInput, addressCount, true);
-				console.log('[BTC Tracker] Derived addresses (first 5):');
-				addresses.slice(0, 5).forEach((addr) => {
-					console.log(`  ${addr.path}: ${addr.address}`);
-					console.log(`    ScriptHash: ${addr.scriptHash}`);
-				});
-				console.log(`[BTC Tracker] Total addresses derived: ${addresses.length}`);
 			} else {
 				throw new Error('Invalid input. Enter an XPUB/YPUB/ZPUB or a Bitcoin address (1..., 3..., bc1...)');
 			}
@@ -124,6 +126,7 @@
 			scriptHashes = addresses.map((a) => a.scriptHash);
 
 			// Connect to Kraken for prices
+			loadingStatus = 'Connecting to price feed...';
 			await krakenService.connect();
 			unsubscribePrice = krakenService.onPriceUpdate((prices: KrakenPrices) => {
 				usdPrice = prices.btcUsd;
@@ -132,9 +135,14 @@
 			});
 
 			// Initial balance fetch
+			loadingStatus = `Querying balances for ${addresses.length} addresses...`;
 			await fetchBalance();
 
 			isConnected = true;
+
+			// Fetch transaction history for the chart
+			loadingStatus = 'Loading transaction history...';
+			fetchHistory();
 
 			// Start refresh interval (every 60 seconds for Electrum)
 			refreshInterval = setInterval(fetchBalance, 60000);
@@ -150,6 +158,7 @@
 			isConnected = false;
 		} finally {
 			isLoading = false;
+			loadingStatus = '';
 		}
 	}
 
@@ -186,6 +195,44 @@
 		}
 	}
 
+	async function fetchHistory() {
+		if (scriptHashes.length === 0) {
+			console.log('[History] No script hashes available');
+			return;
+		}
+		console.log(`[History] Fetching history for ${scriptHashes.length} script hashes`);
+		historyLoading = true;
+		historyError = null;
+
+		try {
+			const response = await fetch('/api/history', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					host: electrumHost,
+					port: electrumPort,
+					scriptHashes,
+					useSsl
+				})
+			});
+
+			const data = await response.json();
+			console.log('[History] Response received:', data);
+
+			if (!response.ok) {
+				throw new Error(data.error || 'Failed to fetch history');
+			}
+
+			historyData = data.history || [];
+			console.log(`[History] Loaded ${historyData.length} data points`);
+		} catch (e) {
+			console.error('[History] Failed to fetch history:', e);
+			historyError = e instanceof Error ? e.message : 'Failed to load history';
+		} finally {
+			historyLoading = false;
+		}
+	}
+
 	function disconnect() {
 		if (refreshInterval) {
 			clearInterval(refreshInterval);
@@ -201,6 +248,8 @@
 		addressBalances = [];
 		scriptHashes = [];
 		derivedAddresses = [];
+		historyData = [];
+		historyError = null;
 	}
 
 	onMount(() => {
@@ -211,13 +260,16 @@
 		const savedSsl = localStorage.getItem('btc-tracker-ssl');
 		const savedCount = localStorage.getItem('btc-tracker-count');
 
-		if (savedXpub) xpubInput = savedXpub;
+		if (savedXpub) {
+			xpubInput = savedXpub;
+		}
+		
 		if (savedHost) electrumHost = savedHost;
 		if (savedPort) electrumPort = parseInt(savedPort, 10);
 		if (savedSsl) useSsl = savedSsl === 'true';
 		if (savedCount) addressCount = parseInt(savedCount, 10);
 
-		// Auto-connect if we have saved credentials
+		// Auto-connect if we have xpub
 		if (savedXpub) {
 			connectAndLoad();
 		}
@@ -319,9 +371,14 @@
 				<button
 					onclick={connectAndLoad}
 					disabled={isLoading || !xpubInput}
-					class="w-full border border-cyan-500 bg-cyan-500/10 px-6 py-3 text-sm tracking-widest text-cyan-400 transition-all hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+					class="w-full border border-cyan-500 bg-cyan-500/10 px-6 py-3 text-sm tracking-widest text-cyan-400 transition-all hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-3"
 				>
-					{isLoading ? 'CONNECTING...' : 'CONNECT'}
+					{#if isLoading}
+						<span class="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent"></span>
+						<span>{loadingStatus || 'CONNECTING...'}</span>
+					{:else}
+						<span>CONNECT</span>
+					{/if}
 				</button>
 			</div>
 		</div>
@@ -386,7 +443,14 @@
 				</p>
 			{/if}
 
-			<div class="flex gap-4 justify-center">
+			<div class="flex gap-4 justify-center flex-wrap">
+				<button
+					onclick={() => (showChart = !showChart)}
+					class="border border-gray-700 px-6 py-2 text-xs tracking-widest text-gray-500 transition-all hover:border-cyan-500 hover:text-cyan-400"
+				>
+					{showChart ? 'HIDE' : 'SHOW'} CHART
+				</button>
+
 				<button
 					onclick={() => (showAddresses = !showAddresses)}
 					class="border border-gray-700 px-6 py-2 text-xs tracking-widest text-gray-500 transition-all hover:border-cyan-500 hover:text-cyan-400"
@@ -401,6 +465,31 @@
 					DISCONNECT
 				</button>
 			</div>
+
+			{#if showChart}
+				<div class="mt-4">
+					{#if historyLoading}
+						<div class="border border-gray-800 bg-gray-900/30 p-4" style="height: 300px;">
+							<div class="flex h-full items-center justify-center">
+								<div class="flex items-center gap-3">
+									<span class="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent"></span>
+									<p class="text-sm text-gray-500">Loading transaction history...</p>
+								</div>
+							</div>
+						</div>
+					{:else if historyError}
+						<div class="border border-gray-800 bg-gray-900/30 p-4">
+							<p class="text-sm text-red-400 text-center">{historyError}</p>
+						</div>
+					{:else}
+						<AccumulationChart 
+							data={historyData} 
+							btcPrice={showEuro ? eurPrice : usdPrice}
+							currency={showEuro ? 'EUR' : 'USD'}
+						/>
+					{/if}
+				</div>
+			{/if}
 
 			{#if showAddresses}
 				<div class="space-y-3">

@@ -284,7 +284,7 @@
 	<title>BTC Portfolio Tracker</title>
 </svelte:head>
 
-<div class="flex min-h-screen flex-col items-center justify-center bg-black p-4 pb-20 text-white">
+<div class="flex min-h-screen flex-col items-center justify-center bg-black p-4 pb-28 text-white">
 	{#if !isConnected}
 		<!-- Setup Form -->
 		<div class="w-full max-w-lg space-y-6">
@@ -387,7 +387,7 @@
 		<div class="w-full max-w-2xl space-y-8 text-center">
 			<div class="space-y-2">
 				<p class="text-xs tracking-widest text-gray-500 uppercase">Bitcoin Balance</p>
-				<p class="font-mono text-5xl font-light tracking-wider text-white md:text-6xl">
+				<p class="font-mono text-4xl font-light tracking-wider text-white sm:text-5xl md:text-6xl break-all">
 					<button
 						type="button"
 						class="hover:text-cyan-400 transition-colors cursor-pointer select-none"
@@ -401,7 +401,7 @@
 						{/if}
 					</button><button 
 						type="button"
-						class="text-2xl text-cyan-400 cursor-pointer hover:text-cyan-300 transition-colors bg-transparent border-0 p-0 ml-2"
+						class="text-lg text-cyan-400 cursor-pointer hover:text-cyan-300 transition-colors bg-transparent border-0 p-0 ml-2 sm:text-2xl"
 						onclick={() => (showSats = !showSats)}
 						aria-label="Toggle between BTC and satoshis"
 					>
@@ -410,15 +410,15 @@
 				</p>
 			</div>
 
-			<div class="grid grid-cols-2 gap-8">
+			<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8">
 				<button
 					type="button"
-					class="border border-gray-800 bg-gray-900/30 p-6 cursor-pointer hover:border-gray-700 transition-colors text-left"
+					class="border border-gray-800 bg-gray-900/30 p-6 cursor-pointer hover:border-gray-700 transition-colors text-center"
 					onclick={() => (showEuro = !showEuro)}
 					aria-label="Toggle between USD and EUR"
 				>
 					<p class="mb-2 text-xs tracking-widest text-gray-500 uppercase">{showEuro ? 'EURO' : 'USD'}</p>
-					<p class="font-mono text-2xl {showEuro ? 'text-yellow-400' : 'text-green-400'} md:text-3xl">
+					<p class="font-mono text-xl {showEuro ? 'text-yellow-400' : 'text-green-400'} sm:text-2xl md:text-3xl break-words">
 						{formatCurrency(showEuro ? eurBalance : usdBalance, showEuro ? 'EUR' : 'USD')}
 					</p>
 					<p class="mt-1 text-xs text-gray-600">
@@ -426,9 +426,9 @@
 					</p>
 				</button>
 
-				<div class="border border-gray-800 bg-gray-900/30 p-6">
+				<div class="border border-gray-800 bg-gray-900/30 p-6 text-center">
 					<p class="mb-2 text-xs tracking-widest text-gray-500 uppercase">PLN</p>
-					<p class="font-mono text-2xl text-blue-400 md:text-3xl">
+					<p class="font-mono text-xl text-blue-400 sm:text-2xl md:text-3xl break-words">
 						{formatCurrency(plnBalance, 'PLN')}
 					</p>
 					<p class="mt-1 text-xs text-gray-600">
@@ -486,6 +486,7 @@
 							data={historyData} 
 							btcPrice={showEuro ? eurPrice : usdPrice}
 							currency={showEuro ? 'EUR' : 'USD'}
+							showSats={showSats}
 						/>
 					{/if}
 				</div>
@@ -566,9 +567,9 @@
 
 	<!-- Live indicator -->
 	{#if isConnected}
-		<div class="fixed right-4 top-4 flex items-center gap-2">
+		<div class="fixed right-3 top-3 flex items-center gap-2 sm:right-4 sm:top-4">
 			<span class="h-2 w-2 animate-pulse rounded-full bg-green-500"></span>
-			<span class="text-xs text-gray-500">LIVE</span>
+			<span class="text-[10px] text-gray-500 sm:text-xs">LIVE</span>
 		</div>
 	{/if}
 

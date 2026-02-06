@@ -36,9 +36,10 @@
 		data: AccumulationPoint[];
 		btcPrice: number;
 		currency: 'USD' | 'EUR';
+		showSats?: boolean;
 	}
 
-	let { data, btcPrice, currency }: Props = $props();
+	let { data, btcPrice, currency, showSats = false }: Props = $props();
 
 	type Timeframe = '1h' | '1d' | '1w' | '1m' | '1y' | '5y' | 'max';
 	let selectedTimeframe = $state<Timeframe>('max');
@@ -94,7 +95,7 @@
 		}
 
 		const labels = filteredData.map((p) => p.date);
-		const values = filteredData.map((p) => p.cumulativeBtc);
+		const values = filteredData.map((p) => (showSats ? p.cumulativeBtc * 1e8 : p.cumulativeBtc));
 
 		chart = new Chart(canvas, {
 			type: 'line',
@@ -145,15 +146,21 @@
 								day: 'numeric',
 							});
 						},
-						label: (item) => {
+							label: (item) => {
 							const idx = item.dataIndex;
 							const point = filteredData[idx];
-							const deltaBtc = point.deltaSats / 1e8;
-							const sign = deltaBtc >= 0 ? '+' : '';
+								const deltaBtc = point.deltaSats / 1e8;
+								const sign = deltaBtc >= 0 ? '+' : '';
 							const fiatValue = (point.cumulativeBtc * btcPrice).toFixed(2);
+								const balanceLabel = showSats
+									? `${Math.round(point.cumulativeBtc * 1e8).toLocaleString()} sats`
+									: `${point.cumulativeBtc.toFixed(8)} BTC`;
+								const changeLabel = showSats
+									? `${sign}${Math.round(point.deltaSats).toLocaleString()} sats`
+									: `${sign}${deltaBtc.toFixed(8)} BTC`;
 							return [
-								`Balance: ${point.cumulativeBtc.toFixed(8)} BTC (${currency === 'USD' ? '$' : '€'}${fiatValue})`,
-									`Change: ${sign}${deltaBtc.toFixed(8)} BTC`,
+									`Balance: ${balanceLabel} (${currency === 'USD' ? '$' : '€'}${fiatValue})`,
+									`Change: ${changeLabel}`,
 								];
 							},
 						},
@@ -184,10 +191,11 @@
 							color: '#6b7280',
 							font: { size: 10 },
 							callback: (value) => {
-								if (typeof value === 'number') {
-									return value.toFixed(value < 0.01 ? 6 : 4);
+								if (typeof value !== 'number') return value;
+								if (showSats) {
+									return Math.round(value).toLocaleString();
 								}
-								return value;
+								return value.toFixed(value < 0.01 ? 6 : 4);
 							},
 						},
 						border: {

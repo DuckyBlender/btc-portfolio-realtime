@@ -125,16 +125,7 @@
 			derivedAddresses = addresses;
 			scriptHashes = addresses.map((a) => a.scriptHash);
 
-			// Connect to Kraken for prices
-			loadingStatus = 'Connecting to price feed...';
-			await krakenService.connect();
-			unsubscribePrice = krakenService.onPriceUpdate((prices: KrakenPrices) => {
-				usdPrice = prices.btcUsd;
-				plnPrice = prices.btcPln;
-				eurPrice = prices.btcEur;
-			});
-
-			// Initial balance fetch
+			// Initial chain balance fetch
 			loadingStatus = `Querying balances for ${addresses.length} addresses...`;
 			await fetchBalance();
 
@@ -143,6 +134,15 @@
 			// Fetch transaction history for the chart
 			loadingStatus = 'Loading transaction history...';
 			fetchHistory();
+
+			// Connect to Kraken for prices after chain queries complete
+			loadingStatus = 'Connecting to price feed...';
+			await krakenService.connect();
+			unsubscribePrice = krakenService.onPriceUpdate((prices: KrakenPrices) => {
+				usdPrice = prices.btcUsd;
+				plnPrice = prices.btcPln;
+				eurPrice = prices.btcEur;
+			});
 
 			// Start refresh interval (every 60 seconds for Electrum)
 			refreshInterval = setInterval(fetchBalance, 60000);

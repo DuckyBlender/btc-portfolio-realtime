@@ -1,5 +1,5 @@
 import { HDKey } from '@scure/bip32';
-import { base58check, bech32 } from '@scure/base';
+import { createBase58check } from '@scure/base';
 import * as bitcoin from 'bitcoinjs-lib';
 import { sha256 } from '@noble/hashes/sha2.js';
 import type { XPUBValidation } from '../../types/btc-tracker';
@@ -39,6 +39,8 @@ export interface DerivedAddress {
 	isChange: boolean;
 }
 
+const base58check = createBase58check(sha256);
+
 function getAddressType(prefix: string): AddressType {
 	const lowerPrefix = prefix.toLowerCase();
 	if (lowerPrefix.startsWith('x') || lowerPrefix.startsWith('t')) return 'p2pkh';
@@ -56,7 +58,7 @@ function convertToXpub(extendedKey: string): { xpub: string; network: bitcoin.Ne
 	}
 
 	const addressType = getAddressType(prefix);
-	const decoded = base58check(sha256).decode(extendedKey);
+	const decoded = base58check.decode(extendedKey);
 	const data = decoded.slice(4);
 
 	// Convert to standard xpub format for HDKey
@@ -68,7 +70,7 @@ function convertToXpub(extendedKey: string): { xpub: string; network: bitcoin.Ne
 	newData.set(xpubVersion);
 	newData.set(data, 4);
 
-	const xpub = base58check(sha256).encode(newData);
+	const xpub = base58check.encode(newData);
 	return { xpub, network: versionInfo.network, addressType };
 }
 

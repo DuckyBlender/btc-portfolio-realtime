@@ -52,6 +52,10 @@
 	let showPriceOutline = $state(false);
 	let priceHistory = $state<PricePoint[]>([]);
 	let priceHistoryLoading = $state(false);
+	const PRICE_HISTORY_CACHE_TTL_MS = 10 * 60 * 1000;
+	const PRICE_HISTORY_CACHE_BUCKET_SECONDS = 60 * 60;
+	const priceHistoryCache = new Map<string, { prices: PricePoint[]; expiresAt: number }>();
+	const priceHistoryInFlight = new Map<string, Promise<PricePoint[]>>();
 
 	const timeframeMs = {
 		'1w': 7 * 24 * 60 * 60 * 1000,
@@ -197,6 +201,32 @@
 		const durationSec = Math.floor(timeframeMs[selectedTimeframe] / 1000);
 		const start = Math.max(1, nowSec - durationSec);
 		return { start, end: nowSec };
+	}
+
+	function getPriceHistoryCacheKey(fetchCurrency: Props['currency'], from: number, to: number): string {
+		const bucket = PRICE_HISTORY_CACHE_BUCKET_SECONDS;
+		const normalizedFrom = Math.floor(from / bucket) * bucket;
+		const normalizedTo = Math.floor(to / bucket) * bucket;
+		return `${fetchCurrency}:${normalizedFrom}:${normalizedTo}`;
+	}
+
+	async function fetchPriceHistoryRange(
+		from: number,
+		to: number,
+		fetchCurrency: Props['currency']
+	): Promise<PricePoint[]> {
+		const query = new URLSearchParams({
+			from: String(from),
+			to: String(to),
+			currency: fetchCurrency
+		});
+		const response = await fetch(`/api/price-history?${query.toString()}`);
+		const payload = await response.json();
+		return Array.isArray(payload?.prices)
+			? payload.prices.filter(
+					(item: PricePoint) => Number.isFinite(item?.timestamp) && Number.isFinite(item?.price)
+				)
+			: [];
 	}
 
 	function getBalanceAtOrBefore(points: AccumulationPoint[], timestamp: number): number {
@@ -483,39 +513,49 @@
 		const nowSec = Math.floor(Date.now() / 1000);
 		const from = Math.max(1, Math.min(...timestamps) - 24 * 60 * 60);
 		const to = Math.max(from + 1, nowSec + 60 * 60, Math.max(...timestamps) + 24 * 60 * 60);
-		const controller = new AbortController();
+		const cacheKey = getPriceHistoryCacheKey(currency, from, to);
+		const cachedEntry = priceHistoryCache.get(cacheKey);
+		if (cachedEntry && cachedEntry.expiresAt > Date.now()) {
+			priceHistory = cachedEntry.prices;
+			priceHistoryLoading = false;
+			return;
+		}
+
+		let cancelled = false;
 		priceHistoryLoading = true;
+
+		let request = priceHistoryInFlight.get(cacheKey);
+		if (!request) {
+			request = fetchPriceHistoryRange(from, to, currency).finally(() => {
+				priceHistoryInFlight.delete(cacheKey);
+			});
+			priceHistoryInFlight.set(cacheKey, request);
+		}
 
 		void (async () => {
 			try {
-				const query = new URLSearchParams({
-					from: String(from),
-					to: String(to),
-					currency
+				const prices = await request;
+				priceHistoryCache.set(cacheKey, {
+					prices,
+					expiresAt: Date.now() + PRICE_HISTORY_CACHE_TTL_MS
 				});
-				const response = await fetch(`/api/price-history?${query.toString()}`, {
-					signal: controller.signal
-				});
-				const payload = await response.json();
-				priceHistory = Array.isArray(payload?.prices)
-					? payload.prices.filter(
-							(item: PricePoint) => Number.isFinite(item?.timestamp) && Number.isFinite(item?.price)
-						)
-					: [];
+				if (!cancelled) {
+					priceHistory = prices;
+				}
 			} catch (error) {
-				if (!controller.signal.aborted) {
+				if (!cancelled) {
 					console.error('[Chart] Failed to load historical prices:', error);
 					priceHistory = [];
 				}
 			} finally {
-				if (!controller.signal.aborted) {
+				if (!cancelled) {
 					priceHistoryLoading = false;
 				}
 			}
 		})();
 
 		return () => {
-			controller.abort();
+			cancelled = true;
 		};
 	});
 

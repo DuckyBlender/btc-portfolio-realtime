@@ -476,12 +476,6 @@
 				</div>
 			</div>
 
-			{#if lastUpdated}
-				<p class="text-xs text-gray-600">
-					Last updated: {lastUpdated.toLocaleTimeString()}
-				</p>
-			{/if}
-
 			<div class="flex flex-wrap justify-center gap-4">
 				<button
 					onclick={() => (showChart = !showChart)}
@@ -636,6 +630,12 @@
 				{refreshStatusLoading ? 'REFRESHING' : 'REFRESH'}
 			</button>
 		</div>
+	{/if}
+
+	{#if isConnected && lastUpdated}
+		<p class="mt-6 pb-2 text-center text-xs text-gray-600">
+			Last updated: {lastUpdated.toLocaleTimeString()}
+		</p>
 	{/if}
 
 	<Footer />

@@ -38,16 +38,28 @@
 
 	// Copy to clipboard function
 	function copyToClipboard(text: string, label: string = 'Text') {
-		navigator.clipboard.writeText(text).then(() => {
-			console.log(`${label} copied to clipboard`);
-		}).catch(err => {
-			console.error('Failed to copy:', err);
-		});
+		navigator.clipboard
+			.writeText(text)
+			.then(() => {
+				console.log(`${label} copied to clipboard`);
+			})
+			.catch((err) => {
+				console.error('Failed to copy:', err);
+			});
 	}
 
 	// Balance data
 	let btcBalance = $state(0);
-	let historyData = $state<{ timestamp: number; date: string; cumulativeBtc: number; deltaSats: number; txHash: string; blockHeight: number }[]>([]);
+	let historyData = $state<
+		{
+			timestamp: number;
+			date: string;
+			cumulativeBtc: number;
+			deltaSats: number;
+			txHash: string;
+			blockHeight: number;
+		}[]
+	>([]);
 	let historyLoading = $state(false);
 	let historyError = $state<string | null>(null);
 	let showChart = $state(true);
@@ -55,7 +67,10 @@
 	let plnPrice = $state(0);
 	let eurPrice = $state(0);
 	let lastUpdated = $state<Date | null>(null);
-	let addressBalances = $state<{ scriptHash: string; balance: number; confirmed: number; unconfirmed: number }[]>([]);
+	let addressBalances = $state<
+		{ scriptHash: string; balance: number; confirmed: number; unconfirmed: number }[]
+	>([]);
+	let refreshStatusLoading = $state(false);
 
 	// Services
 	let krakenService = getKrakenPriceService();
@@ -109,7 +124,7 @@
 					throw new Error(validation.error);
 				}
 				loadingStatus = 'Processing address...';
-				addresses = [singleAddressToDerivied(xpubInput)];				
+				addresses = [singleAddressToDerivied(xpubInput)];
 			} else if (detectedType === 'xpub') {
 				// XPUB mode
 				const validation = validateXPUB(xpubInput);
@@ -119,7 +134,9 @@
 				loadingStatus = `Deriving ${addressCount * 2} addresses...`;
 				addresses = deriveAddresses(xpubInput, addressCount, true);
 			} else {
-				throw new Error('Invalid input. Enter an XPUB/YPUB/ZPUB or a Bitcoin address (1..., 3..., bc1...)');
+				throw new Error(
+					'Invalid input. Enter an XPUB/YPUB/ZPUB or a Bitcoin address (1..., 3..., bc1...)'
+				);
 			}
 
 			derivedAddresses = addresses;
@@ -233,6 +250,18 @@
 		}
 	}
 
+	async function refreshWalletStatus() {
+		if (!isConnected || refreshStatusLoading) return;
+
+		refreshStatusLoading = true;
+		try {
+			await fetchBalance();
+			await fetchHistory();
+		} finally {
+			refreshStatusLoading = false;
+		}
+	}
+
 	function disconnect() {
 		if (refreshInterval) {
 			clearInterval(refreshInterval);
@@ -263,7 +292,7 @@
 		if (savedXpub) {
 			xpubInput = savedXpub;
 		}
-		
+
 		if (savedHost) electrumHost = savedHost;
 		if (savedPort) electrumPort = parseInt(savedPort, 10);
 		if (savedSsl) useSsl = savedSsl === 'true';
@@ -341,28 +370,28 @@
 						bind:checked={useSsl}
 						class="h-4 w-4 border-gray-800 bg-gray-900/50 text-cyan-500 focus:ring-cyan-500"
 					/>
-					<label for="ssl" class="text-xs tracking-wider text-gray-400 uppercase cursor-pointer">
+					<label for="ssl" class="cursor-pointer text-xs tracking-wider text-gray-400 uppercase">
 						Use SSL/TLS
 					</label>
 				</div>
 
 				{#if inputType === 'xpub'}
-				<div>
-					<label for="count" class="mb-2 block text-xs tracking-wider text-gray-500 uppercase"
-						>Addresses per chain (Gap Limit)</label
-					>
-					<input
-						id="count"
-						type="number"
-						bind:value={addressCount}
-						min="1"
-						max="200"
-						class="w-full border border-gray-800 bg-gray-900/50 px-4 py-3 font-mono text-sm text-white focus:border-cyan-500 focus:outline-none"
-					/>
-					<p class="mt-1 text-xs text-gray-600">
-						Will derive {addressCount * 2} total addresses (receive + change)
-					</p>
-				</div>
+					<div>
+						<label for="count" class="mb-2 block text-xs tracking-wider text-gray-500 uppercase"
+							>Addresses per chain (Gap Limit)</label
+						>
+						<input
+							id="count"
+							type="number"
+							bind:value={addressCount}
+							min="1"
+							max="200"
+							class="w-full border border-gray-800 bg-gray-900/50 px-4 py-3 font-mono text-sm text-white focus:border-cyan-500 focus:outline-none"
+						/>
+						<p class="mt-1 text-xs text-gray-600">
+							Will derive {addressCount * 2} total addresses (receive + change)
+						</p>
+					</div>
 				{/if}
 				{#if error}
 					<p class="text-sm text-red-500">{error}</p>
@@ -371,10 +400,12 @@
 				<button
 					onclick={connectAndLoad}
 					disabled={isLoading || !xpubInput}
-					class="w-full border border-cyan-500 bg-cyan-500/10 px-6 py-3 text-sm tracking-widest text-cyan-400 transition-all hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-3"
+					class="flex w-full items-center justify-center gap-3 border border-cyan-500 bg-cyan-500/10 px-6 py-3 text-sm tracking-widest text-cyan-400 transition-all hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					{#if isLoading}
-						<span class="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent"></span>
+						<span
+							class="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent"
+						></span>
 						<span>{loadingStatus || 'CONNECTING...'}</span>
 					{:else}
 						<span>CONNECT</span>
@@ -387,10 +418,12 @@
 		<div class="w-full max-w-2xl space-y-8 text-center">
 			<div class="space-y-2">
 				<p class="text-xs tracking-widest text-gray-500 uppercase">Bitcoin Balance</p>
-				<p class="font-mono text-4xl font-light tracking-wider text-white sm:text-5xl md:text-6xl break-all">
+				<p
+					class="font-mono text-4xl font-light tracking-wider break-all text-white sm:text-5xl md:text-6xl"
+				>
 					<button
 						type="button"
-						class="hover:text-cyan-400 transition-colors cursor-pointer select-none"
+						class="cursor-pointer transition-colors select-none hover:text-cyan-400"
 						onclick={() => (showSats = !showSats)}
 						aria-label="Toggle between BTC and satoshis"
 					>
@@ -399,9 +432,9 @@
 						{:else}
 							{formatBtc(btcBalance)}
 						{/if}
-					</button><button 
+					</button><button
 						type="button"
-						class="text-lg text-cyan-400 cursor-pointer hover:text-cyan-300 transition-colors bg-transparent border-0 p-0 ml-2 sm:text-2xl"
+						class="ml-2 cursor-pointer border-0 bg-transparent p-0 text-lg text-cyan-400 transition-colors hover:text-cyan-300 sm:text-2xl"
 						onclick={() => (showSats = !showSats)}
 						aria-label="Toggle between BTC and satoshis"
 					>
@@ -413,12 +446,18 @@
 			<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8">
 				<button
 					type="button"
-					class="border border-gray-800 bg-gray-900/30 p-6 cursor-pointer hover:border-gray-700 transition-colors text-center"
+					class="cursor-pointer border border-gray-800 bg-gray-900/30 p-6 text-center transition-colors hover:border-gray-700"
 					onclick={() => (showEuro = !showEuro)}
 					aria-label="Toggle between USD and EUR"
 				>
-					<p class="mb-2 text-xs tracking-widest text-gray-500 uppercase">{showEuro ? 'EURO' : 'USD'}</p>
-					<p class="font-mono text-xl {showEuro ? 'text-yellow-400' : 'text-green-400'} sm:text-2xl md:text-3xl break-words">
+					<p class="mb-2 text-xs tracking-widest text-gray-500 uppercase">
+						{showEuro ? 'EURO' : 'USD'}
+					</p>
+					<p
+						class="font-mono text-xl {showEuro
+							? 'text-yellow-400'
+							: 'text-green-400'} break-words sm:text-2xl md:text-3xl"
+					>
 						{formatCurrency(showEuro ? eurBalance : usdBalance, showEuro ? 'EUR' : 'USD')}
 					</p>
 					<p class="mt-1 text-xs text-gray-600">
@@ -428,7 +467,7 @@
 
 				<div class="border border-gray-800 bg-gray-900/30 p-6 text-center">
 					<p class="mb-2 text-xs tracking-widest text-gray-500 uppercase">PLN</p>
-					<p class="font-mono text-xl text-blue-400 sm:text-2xl md:text-3xl break-words">
+					<p class="font-mono text-xl break-words text-blue-400 sm:text-2xl md:text-3xl">
 						{formatCurrency(plnBalance, 'PLN')}
 					</p>
 					<p class="mt-1 text-xs text-gray-600">
@@ -443,7 +482,7 @@
 				</p>
 			{/if}
 
-			<div class="flex gap-4 justify-center flex-wrap">
+			<div class="flex flex-wrap justify-center gap-4">
 				<button
 					onclick={() => (showChart = !showChart)}
 					class="border border-gray-700 px-6 py-2 text-xs tracking-widest text-gray-500 transition-all hover:border-cyan-500 hover:text-cyan-400"
@@ -472,21 +511,23 @@
 						<div class="border border-gray-800 bg-gray-900/30 p-4" style="height: 300px;">
 							<div class="flex h-full items-center justify-center">
 								<div class="flex items-center gap-3">
-									<span class="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent"></span>
+									<span
+										class="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent"
+									></span>
 									<p class="text-sm text-gray-500">Loading transaction history...</p>
 								</div>
 							</div>
 						</div>
 					{:else if historyError}
 						<div class="border border-gray-800 bg-gray-900/30 p-4">
-							<p class="text-sm text-red-400 text-center">{historyError}</p>
+							<p class="text-center text-sm text-red-400">{historyError}</p>
 						</div>
 					{:else}
-						<AccumulationChart 
-							data={historyData} 
+						<AccumulationChart
+							data={historyData}
 							btcPrice={showEuro ? eurPrice : usdPrice}
 							currency={showEuro ? 'EUR' : 'USD'}
-							showSats={showSats}
+							{showSats}
 						/>
 					{/if}
 				</div>
@@ -496,7 +537,8 @@
 				<div class="space-y-3">
 					<div class="flex items-center justify-between">
 						<p class="text-xs tracking-wider text-gray-500 uppercase">
-							Addresses ({displayedAddresses.length} {hideEmpty ? 'with balance' : 'total'})
+							Addresses ({displayedAddresses.length}
+							{hideEmpty ? 'with balance' : 'total'})
 						</p>
 						<div class="flex items-center gap-2">
 							<input
@@ -505,7 +547,7 @@
 								bind:checked={hideEmpty}
 								class="h-3 w-3 border-gray-800 bg-gray-900/50 text-cyan-500 focus:ring-cyan-500"
 							/>
-							<label for="hideEmpty" class="text-xs text-gray-400 cursor-pointer">
+							<label for="hideEmpty" class="cursor-pointer text-xs text-gray-400">
 								Hide empty
 							</label>
 						</div>
@@ -515,24 +557,30 @@
 						<div class="space-y-3 font-mono text-xs">
 							{#each displayedAddresses as addr}
 								<div class="border-b border-gray-800/50 pb-3">
-									<div class="flex items-center justify-between mb-1">
+									<div class="mb-1 flex items-center justify-between">
 										<div class="text-gray-500">
-											m/{addr.path} {addr.isChange ? '(change)' : '(receive)'}
+											m/{addr.path}
+											{addr.isChange ? '(change)' : '(receive)'}
 										</div>
 										{#if addr.balance > 0}
 											<button
 												type="button"
-												class="text-green-400 font-semibold hover:text-green-300 transition-colors cursor-pointer select-none"
-												onclick={() => copyToClipboard(showSats ? addr.balance.toString() : formatBtc(addr.btc), 'Balance')}
+												class="cursor-pointer font-semibold text-green-400 transition-colors select-none hover:text-green-300"
+												onclick={() =>
+													copyToClipboard(
+														showSats ? addr.balance.toString() : formatBtc(addr.btc),
+														'Balance'
+													)}
 												title="Click to copy balance"
 											>
-												{showSats ? addr.balance.toLocaleString() : formatBtc(addr.btc)} {showSats ? 'sats' : 'BTC'}
+												{showSats ? addr.balance.toLocaleString() : formatBtc(addr.btc)}
+												{showSats ? 'sats' : 'BTC'}
 											</button>
 										{/if}
 									</div>
 									<button
 										type="button"
-									class="text-cyan-400 mb-2 hover:text-cyan-300 transition-colors cursor-pointer select-none text-center w-full"
+										class="mb-2 w-full cursor-pointer text-center text-cyan-400 transition-colors select-none hover:text-cyan-300"
 										onclick={() => copyToClipboard(addr.address, 'Address')}
 										title="Click to copy address"
 									>
@@ -541,7 +589,13 @@
 									{#if addr.balance > 0}
 										<div class="flex gap-4 text-xs">
 											<div class="text-gray-600">
-											{showEuro ? 'EUR' : 'USD'}: <span class={showEuro ? 'text-yellow-300' : 'text-green-300'}>{formatCurrency(showEuro ? addr.btc * eurPrice : addr.usd, showEuro ? 'EUR' : 'USD')}</span>
+												{showEuro ? 'EUR' : 'USD'}:
+												<span class={showEuro ? 'text-yellow-300' : 'text-green-300'}
+													>{formatCurrency(
+														showEuro ? addr.btc * eurPrice : addr.usd,
+														showEuro ? 'EUR' : 'USD'
+													)}</span
+												>
 											</div>
 											<div class="text-gray-600">
 												PLN: <span class="text-blue-300">{formatCurrency(addr.pln, 'PLN')}</span>
@@ -556,7 +610,9 @@
 								</div>
 							{/each}
 							{#if displayedAddresses.length === 0}
-								<p class="text-center text-gray-600 py-4">No addresses {hideEmpty ? 'with balance' : 'found'}</p>
+								<p class="py-4 text-center text-gray-600">
+									No addresses {hideEmpty ? 'with balance' : 'found'}
+								</p>
 							{/if}
 						</div>
 					</div>
@@ -567,9 +623,18 @@
 
 	<!-- Live indicator -->
 	{#if isConnected}
-		<div class="fixed right-3 top-3 flex items-center gap-2 sm:right-4 sm:top-4">
-			<span class="h-2 w-2 animate-pulse rounded-full bg-green-500"></span>
-			<span class="text-[10px] text-gray-500 sm:text-xs">LIVE</span>
+		<div class="fixed top-3 right-3 flex items-center gap-2 sm:top-4 sm:right-4">
+			<span class="h-2 w-2 -translate-y-px animate-pulse rounded-full bg-green-500"></span>
+			<span class="text-[10px] leading-none text-gray-500 sm:text-xs">LIVE PRICES</span>
+			<button
+				type="button"
+				onclick={refreshWalletStatus}
+				disabled={refreshStatusLoading}
+				title="Refresh wallet status"
+				class="border border-gray-700 px-2 py-0.5 text-[10px] tracking-wider text-gray-500 transition-all hover:border-cyan-500 hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-60 sm:text-xs"
+			>
+				{refreshStatusLoading ? 'REFRESHING' : 'REFRESH'}
+			</button>
 		</div>
 	{/if}
 

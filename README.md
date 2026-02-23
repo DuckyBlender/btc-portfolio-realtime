@@ -37,16 +37,63 @@ Visit `http://localhost:5173`
 
 Server only sees script hashes. Your XPUB is safe.
 
+## Live Share Links (Encrypted)
+
+You can share a live, refreshing portfolio view without sharing your XPUB.
+
+### What gets shared
+
+- Script hashes (for Electrum balance/history lookups)
+- Electrum connection settings (host, port, SSL)
+- UI preferences (BTC/sats, USD/EUR toggle, chart visibility)
+
+### What never gets shared
+
+- XPUB/YPUB/ZPUB
+- Derived addresses
+- Private keys or seed phrases (you never even enter these in the app)
+
+### How sharing works
+
+1. App builds a share payload locally in your browser.
+2. Payload is encrypted client-side with `AES-GCM` using a random 256-bit key.
+3. Server stores only encrypted ciphertext + IV with a random share ID.
+4. Share URL is generated as `/share/<id>#k=<key>`.
+5. The decryption key is in the URL fragment (`#...`), so it is not sent in HTTP requests.
+6. Receiver decrypts in their browser, then app loads using script hashes only.
+
+### Link expiry and storage
+
+- Share records currently expire after 7 days.
+- Current implementation uses in-memory storage, so links can disappear earlier on server restart/redeploy.
+
 ## Defaults
 
 - Electrum: electrum.blockstream.info:50002 (SSL on)
 - Change this in the UI if you want a different server
 
+## Privacy Model
+
+This app is privacy-focused, but not a full anonymity solution.
+
+### Strong protections
+
+- XPUB derivation stays in-browser.
+- Backend/API routes operate on script hashes only.
+- Shared links are encrypted end-to-end from sender browser to receiver browser.
+
+### Important caveats
+
+- Script hashes are still wallet metadata. An Electrum server can correlate queried script hashes.
+- If someone gets the full share URL (including `#k=...`), they can open the shared portfolio until expiry.
+- XPUB is currently saved in browser `localStorage` for auto-reconnect convenience.
+- WebSocket/API providers can still see IP-level network metadata.
+
 ## Todo
 
 - [x] BTC Accumulation Chart
 - [x] BTC Price Chart
-- [ ] Export/Share Portfolio (without revealing XPUB)
+- [x] Export/Share Portfolio (without revealing XPUB)
 
 ## Tech
 

@@ -14,6 +14,11 @@
 		formatCurrency,
 		type DerivedAddress
 	} from '$lib/services/xpub';
+	import {
+		encryptSharePayload,
+		validateSharePayload,
+		type SharedPortfolioPayloadV1
+	} from '$lib/services/share';
 
 	// State
 	let xpubInput = $state('');
@@ -35,6 +40,12 @@
 	let hideEmpty = $state(true);
 	let showEuro = $state(false);
 	let showSats = $state(false);
+	let isSharedSession = $state(false);
+	let shareStatus = $state<string | null>(null);
+	let shareError = $state<string | null>(null);
+	let shareLink = $state<string | null>(null);
+	let shareExpiresAt = $state<Date | null>(null);
+	let shareLoading = $state(false);
 
 	// Copy to clipboard function
 	function copyToClipboard(text: string, label: string = 'Text') {
@@ -108,10 +119,129 @@
 		hideEmpty ? addressesWithBalances.filter((a) => a.balance > 0) : addressesWithBalances
 	);
 
+	async function connectAndLoadShared(payload: SharedPortfolioPayloadV1) {
+		error = null;
+		shareError = null;
+		isLoading = true;
+		loadingStatus = 'Loading shared portfolio...';
+		isSharedSession = true;
+		showAddresses = false;
+
+		try {
+			electrumHost = payload.settings.host;
+			electrumPort = payload.settings.port;
+			useSsl = payload.settings.useSsl;
+
+			showEuro = payload.preferences?.showEuro ?? false;
+			showSats = payload.preferences?.showSats ?? false;
+			hideEmpty = payload.preferences?.hideEmpty ?? true;
+			showChart = payload.preferences?.showChart ?? true;
+
+			scriptHashes = [...new Set(payload.scriptHashes)];
+			if (scriptHashes.length === 0) {
+				throw new Error('Shared portfolio contains no script hashes');
+			}
+
+			// Shared sessions never include addresses/xpub, only script hashes.
+			derivedAddresses = scriptHashes.map((scriptHash, index) => ({
+				address: `script:${scriptHash.slice(0, 12)}...`,
+				scriptHash,
+				path: 'shared',
+				index,
+				isChange: false
+			}));
+
+			loadingStatus = `Querying balances for ${scriptHashes.length} script hashes...`;
+			await fetchBalance();
+
+			isConnected = true;
+
+			loadingStatus = 'Loading transaction history...';
+			fetchHistory();
+
+			loadingStatus = 'Connecting to price feed...';
+			await krakenService.connect();
+			unsubscribePrice = krakenService.onPriceUpdate((prices: KrakenPrices) => {
+				usdPrice = prices.btcUsd;
+				plnPrice = prices.btcPln;
+				eurPrice = prices.btcEur;
+			});
+
+			refreshInterval = setInterval(fetchBalance, 60000);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load shared portfolio';
+			isConnected = false;
+		} finally {
+			isLoading = false;
+			loadingStatus = '';
+		}
+	}
+
+	async function createShareLink() {
+		if (!isConnected || scriptHashes.length === 0 || shareLoading) return;
+
+		shareLoading = true;
+		shareStatus = null;
+		shareError = null;
+		shareLink = null;
+		shareExpiresAt = null;
+
+		try {
+			const payload: SharedPortfolioPayloadV1 = {
+				version: 1,
+				createdAt: Date.now(),
+				scriptHashes: [...new Set(scriptHashes)],
+				settings: {
+					host: electrumHost,
+					port: electrumPort,
+					useSsl
+				},
+				preferences: {
+					showEuro,
+					showSats,
+					hideEmpty,
+					showChart
+				}
+			};
+
+			const { encrypted, key } = await encryptSharePayload(payload);
+			const response = await fetch('/api/share', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(encrypted)
+			});
+			const result = await response.json();
+
+			if (!response.ok || !result?.id) {
+				throw new Error(result?.error || 'Failed to create share link');
+			}
+
+			const link = `${window.location.origin}/share/${result.id}#k=${encodeURIComponent(key)}`;
+			shareLink = link;
+			shareExpiresAt = Number.isFinite(result.expiresAt) ? new Date(result.expiresAt) : null;
+
+			try {
+				await navigator.clipboard.writeText(link);
+				shareStatus = 'Share link copied to clipboard';
+			} catch {
+				shareStatus = 'Share link created (clipboard access denied, copy manually)';
+			}
+		} catch (e) {
+			shareError = e instanceof Error ? e.message : 'Failed to create share link';
+		} finally {
+			shareLoading = false;
+		}
+	}
+
 	async function connectAndLoad() {
 		error = null;
+		shareStatus = null;
+		shareError = null;
+		shareLink = null;
+		shareExpiresAt = null;
 		isLoading = true;
 		loadingStatus = 'Validating input...';
+		isSharedSession = false;
 
 		try {
 			const detectedType = detectInputType(xpubInput);
@@ -279,9 +409,29 @@
 		derivedAddresses = [];
 		historyData = [];
 		historyError = null;
+		isSharedSession = false;
+		shareStatus = null;
+		shareError = null;
+		shareLink = null;
+		shareExpiresAt = null;
 	}
 
 	onMount(() => {
+		const sharedPayloadRaw = sessionStorage.getItem('btc-tracker-shared-load');
+		if (sharedPayloadRaw) {
+			sessionStorage.removeItem('btc-tracker-shared-load');
+			try {
+				const parsed = JSON.parse(sharedPayloadRaw);
+				if (!validateSharePayload(parsed)) {
+					throw new Error('Shared payload is invalid');
+				}
+				connectAndLoadShared(parsed);
+				return;
+			} catch (e) {
+				error = e instanceof Error ? e.message : 'Failed to read shared portfolio';
+			}
+		}
+
 		// Load saved settings
 		const savedXpub = localStorage.getItem('btc-tracker-xpub');
 		const savedHost = localStorage.getItem('btc-tracker-host');
@@ -484,11 +634,21 @@
 					{showChart ? 'HIDE' : 'SHOW'} CHART
 				</button>
 
+				{#if !isSharedSession}
+					<button
+						onclick={() => (showAddresses = !showAddresses)}
+						class="border border-gray-700 px-6 py-2 text-xs tracking-widest text-gray-500 transition-all hover:border-cyan-500 hover:text-cyan-400"
+					>
+						{showAddresses ? 'HIDE' : 'SHOW'} ADDRESSES
+					</button>
+				{/if}
+
 				<button
-					onclick={() => (showAddresses = !showAddresses)}
-					class="border border-gray-700 px-6 py-2 text-xs tracking-widest text-gray-500 transition-all hover:border-cyan-500 hover:text-cyan-400"
+					onclick={createShareLink}
+					disabled={shareLoading}
+					class="border border-gray-700 px-6 py-2 text-xs tracking-widest text-gray-500 transition-all hover:border-cyan-500 hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
 				>
-					{showAddresses ? 'HIDE' : 'SHOW'} ADDRESSES
+					{shareLoading ? 'CREATING LINK...' : 'SHARE LIVE'}
 				</button>
 
 				<button
@@ -498,6 +658,39 @@
 					DISCONNECT
 				</button>
 			</div>
+
+			{#if isSharedSession}
+				<p class="text-xs tracking-wider text-gray-500 uppercase">
+					Shared session loaded. XPUB and addresses are hidden.
+				</p>
+			{/if}
+
+			{#if shareError}
+				<p class="text-sm text-red-400">{shareError}</p>
+			{/if}
+
+			{#if shareStatus || shareLink}
+				<div class="mx-auto w-full max-w-xl border border-gray-800 bg-gray-900/30 p-3 text-left">
+					{#if shareStatus}
+						<p class="mb-2 text-xs tracking-wider text-cyan-400 uppercase">{shareStatus}</p>
+					{/if}
+					{#if shareLink}
+						<button
+							type="button"
+							class="w-full cursor-pointer break-all border border-gray-700 px-3 py-2 text-left font-mono text-xs text-cyan-300 transition-colors hover:border-cyan-500 hover:text-cyan-200"
+							onclick={() => copyToClipboard(shareLink!, 'Share link')}
+							title="Click to copy share link"
+						>
+							{shareLink}
+						</button>
+						{#if shareExpiresAt}
+							<p class="mt-2 text-[11px] tracking-wider text-gray-500 uppercase">
+								Expires: {shareExpiresAt.toLocaleString()}
+							</p>
+						{/if}
+					{/if}
+				</div>
+			{/if}
 
 			{#if showChart}
 				<div class="mt-4">

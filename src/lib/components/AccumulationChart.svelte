@@ -73,6 +73,7 @@
 	type Timeframe = '1w' | '1m' | '1y' | '5y' | 'max';
 	let selectedTimeframe = $state<Timeframe>('max');
 	let showPriceOutline = $state(false);
+	let showStackValue = $state(false);
 	let priceHistory = $state<PricePoint[]>([]);
 	let priceHistoryLoading = $state(false);
 	const PRICE_HISTORY_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -209,6 +210,27 @@
 		return sampled;
 	}
 
+	function buildStackValueSeries(
+		prices: PricePoint[],
+		points: AccumulationPoint[],
+		timeframe: Timeframe,
+		rangeStart: number,
+		rangeEnd: number
+	): ChartPoint[] {
+		const regularPrices = buildRegularPriceSeries(prices, timeframe, rangeStart, rangeEnd);
+		return regularPrices.map((point) => {
+			if (point.y === null) {
+				return { x: point.x, y: null };
+			}
+
+			const balanceBtc = getBalanceAtOrBefore(points, point.x);
+			return {
+				x: point.x,
+				y: balanceBtc * point.y
+			};
+		});
+	}
+
 	function getSelectedRangeSeconds(): { start: number; end: number } {
 		const nowSec = Math.floor(Date.now() / 1000);
 		const defaultStart = nowSec - 30 * 24 * 60 * 60;
@@ -336,7 +358,11 @@
 		const regularPriceSeries = showPriceOutline
 			? buildRegularPriceSeries(priceHistory, selectedTimeframe, rangeStart, rangeEnd)
 			: [];
+		const stackValueSeries = showStackValue
+			? buildStackValueSeries(priceHistory, data, selectedTimeframe, rangeStart, rangeEnd)
+			: [];
 		const hasPriceValues = regularPriceSeries.some((point) => point.y !== null);
+		const hasStackValueValues = stackValueSeries.some((point) => point.y !== null);
 		const txCountInRange = values.filter((point) => point.kind === 'tx').length;
 		const getAccumulationPointRadius = (raw: unknown): number =>
 			isTxPoint(raw) ? (txCountInRange > 50 ? 0 : 3) : 0;
@@ -409,6 +435,25 @@
 				fill: false,
 				tension: 0.2,
 				yAxisID: 'yPrice'
+			});
+		}
+
+		if (showStackValue && hasStackValueValues) {
+			datasets.push({
+				label: `Stack Value (${currency})`,
+				data: stackValueSeries,
+				borderColor: '#34d399',
+				backgroundColor: 'transparent',
+				borderWidth: 1.5,
+				borderDash: [2, 3],
+				pointRadius: 0,
+				pointHoverRadius: 0,
+				pointHitRadius: 0,
+				pointBackgroundColor: '#34d399',
+				pointBorderColor: '#34d399',
+				fill: false,
+				tension: 0.2,
+				yAxisID: 'yValue'
 			});
 		}
 
@@ -543,6 +588,25 @@
 						border: {
 							color: 'rgba(245, 158, 11, 0.5)'
 						}
+					},
+					yValue: {
+						position: 'right',
+						display: showStackValue && hasStackValueValues,
+						offset: showPriceOutline && hasPriceValues,
+						grid: {
+							drawOnChartArea: false
+						},
+						ticks: {
+							color: '#34d399',
+							font: { size: 10 },
+							callback: (value) => {
+								if (typeof value !== 'number') return value;
+								return `${currencySymbol}${formatPrice(value)}`;
+							}
+						},
+						border: {
+							color: 'rgba(52, 211, 153, 0.5)'
+						}
 					}
 				}
 			}
@@ -675,6 +739,16 @@
 						: 'border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400'}"
 				>
 					BTC PRICE
+				</button>
+				<button
+					type="button"
+					onclick={() => (showStackValue = !showStackValue)}
+					disabled={!showStackValue && (priceHistoryLoading || priceHistory.length === 0)}
+					class="border px-3 py-1 text-xs tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-30 {showStackValue
+						? 'border-emerald-500 bg-emerald-500/20 text-emerald-400'
+						: 'border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400'}"
+				>
+					STACK VALUE
 				</button>
 			</div>
 		</div>

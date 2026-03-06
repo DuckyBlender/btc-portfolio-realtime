@@ -38,6 +38,14 @@
 		deltaSats?: number;
 	}
 
+	function isTxPoint(value: unknown): value is AccumulationSeriesPoint {
+		return (
+			Boolean(value) &&
+			typeof value === 'object' &&
+			(value as AccumulationSeriesPoint).kind === 'tx'
+		);
+	}
+
 	interface Props {
 		data: AccumulationPoint[];
 		btcPrice: number;
@@ -203,7 +211,11 @@
 		return { start, end: nowSec };
 	}
 
-	function getPriceHistoryCacheKey(fetchCurrency: Props['currency'], from: number, to: number): string {
+	function getPriceHistoryCacheKey(
+		fetchCurrency: Props['currency'],
+		from: number,
+		to: number
+	): string {
 		const bucket = PRICE_HISTORY_CACHE_BUCKET_SECONDS;
 		const normalizedFrom = Math.floor(from / bucket) * bucket;
 		const normalizedTo = Math.floor(to / bucket) * bucket;
@@ -302,6 +314,8 @@
 			: [];
 		const hasPriceValues = regularPriceSeries.some((point) => point.y !== null);
 		const txCountInRange = values.filter((point) => point.kind === 'tx').length;
+		const getAccumulationPointRadius = (raw: unknown): number =>
+			isTxPoint(raw) ? (txCountInRange > 50 ? 0 : 3) : 0;
 
 		const datasets: {
 			label: string;
@@ -309,8 +323,9 @@
 			borderColor: string;
 			backgroundColor: string;
 			borderWidth: number;
-			pointRadius: number;
-			pointHoverRadius: number;
+			pointRadius: number | ((ctx: { raw: unknown }) => number);
+			pointHoverRadius: number | ((ctx: { raw: unknown }) => number);
+			pointHitRadius?: number | ((ctx: { raw: unknown }) => number);
 			pointBackgroundColor: string;
 			pointBorderColor: string;
 			fill: boolean;
@@ -326,8 +341,9 @@
 				borderColor: '#22d3ee',
 				backgroundColor: 'rgba(34, 211, 238, 0.08)',
 				borderWidth: 2,
-				pointRadius: txCountInRange > 50 ? 0 : 3,
-				pointHoverRadius: 5,
+				pointRadius: ({ raw }) => getAccumulationPointRadius(raw),
+				pointHoverRadius: ({ raw }) => (isTxPoint(raw) ? 5 : 0),
+				pointHitRadius: ({ raw }) => (isTxPoint(raw) ? 8 : 0),
 				pointBackgroundColor: '#22d3ee',
 				pointBorderColor: '#22d3ee',
 				fill: true,
@@ -378,9 +394,11 @@
 						borderWidth: 1,
 						padding: 12,
 						displayColors: false,
+						filter: (item) => item.datasetIndex !== 0 || isTxPoint(item.raw),
 						callbacks: {
 							title: (items) => {
-								const timestamp = items[0]?.parsed?.x ?? 0;
+								const timestamp = items[0]?.parsed?.x;
+								if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) return '';
 								return new Date(timestamp * 1000).toLocaleString('en-US', {
 									year: 'numeric',
 									month: 'short',

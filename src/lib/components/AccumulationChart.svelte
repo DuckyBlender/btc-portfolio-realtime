@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { onDestroy } from 'svelte';
 	import {
 		Chart,
@@ -38,11 +39,25 @@
 		deltaSats?: number;
 	}
 
+	interface HoverSeriesPoint extends ChartPoint {
+		kind: 'tx';
+		balanceBtc: number;
+		deltaSats?: number;
+	}
+
 	function isTxPoint(value: unknown): value is AccumulationSeriesPoint {
 		return (
 			Boolean(value) &&
 			typeof value === 'object' &&
 			(value as AccumulationSeriesPoint).kind === 'tx'
+		);
+	}
+
+	function isHoverPoint(value: unknown): value is HoverSeriesPoint {
+		return (
+			Boolean(value) &&
+			typeof value === 'object' &&
+			(value as HoverSeriesPoint).kind === 'tx'
 		);
 	}
 
@@ -309,6 +324,15 @@
 		const currencySymbol = currency === 'USD' ? '$' : '€';
 		const { start: rangeStart, end: rangeEnd } = getSelectedRangeSeconds();
 		const values = buildAccumulationSeries(data, rangeStart, rangeEnd);
+		const hoverValues: HoverSeriesPoint[] = values
+			.filter((point): point is AccumulationSeriesPoint => point.kind === 'tx')
+			.map((point) => ({
+				x: point.x,
+				y: point.y,
+				kind: 'tx',
+				balanceBtc: point.balanceBtc,
+				deltaSats: point.deltaSats
+			}));
 		const regularPriceSeries = showPriceOutline
 			? buildRegularPriceSeries(priceHistory, selectedTimeframe, rangeStart, rangeEnd)
 			: [];
@@ -319,7 +343,7 @@
 
 		const datasets: {
 			label: string;
-			data: (AccumulationSeriesPoint | ChartPoint)[];
+			data: (AccumulationSeriesPoint | HoverSeriesPoint | ChartPoint)[];
 			borderColor: string;
 			backgroundColor: string;
 			borderWidth: number;
@@ -352,6 +376,23 @@
 			}
 		];
 
+		if (hoverValues.length > 0) {
+			datasets.push({
+				label: 'BTC Balance Hover',
+				data: hoverValues,
+				borderColor: 'transparent',
+				backgroundColor: 'transparent',
+				borderWidth: 0,
+				pointRadius: 0,
+				pointHoverRadius: 0,
+				pointHitRadius: 14,
+				pointBackgroundColor: 'transparent',
+				pointBorderColor: 'transparent',
+				fill: false,
+				tension: 0
+			});
+		}
+
 		if (showPriceOutline && hasPriceValues) {
 			datasets.push({
 				label: `BTC Price (${currency})`,
@@ -362,6 +403,7 @@
 				borderDash: [5, 4],
 				pointRadius: 0,
 				pointHoverRadius: 0,
+				pointHitRadius: 0,
 				pointBackgroundColor: '#f59e0b',
 				pointBorderColor: '#f59e0b',
 				fill: false,
@@ -379,7 +421,8 @@
 				responsive: true,
 				maintainAspectRatio: false,
 				interaction: {
-					mode: 'index',
+					mode: 'nearest',
+					axis: 'x',
 					intersect: false
 				},
 				plugins: {
@@ -394,7 +437,8 @@
 						borderWidth: 1,
 						padding: 12,
 						displayColors: false,
-						filter: (item) => item.datasetIndex !== 0 || isTxPoint(item.raw),
+						position: 'nearest',
+						filter: (item) => item.datasetIndex === 1 && isHoverPoint(item.raw),
 						callbacks: {
 							title: (items) => {
 								const timestamp = items[0]?.parsed?.x;
@@ -410,14 +454,7 @@
 								});
 							},
 							label: (item) => {
-								if (item.datasetIndex === 1) {
-									const priceValue = item.parsed.y;
-									return priceValue == null
-										? ''
-										: `BTC Price: ${currencySymbol}${formatPrice(priceValue)}`;
-								}
-
-								const rawPoint = item.raw as AccumulationSeriesPoint;
+								const rawPoint = item.raw as HoverSeriesPoint;
 								const balanceBtc = rawPoint?.balanceBtc ?? 0;
 								const fiatValue = (balanceBtc * btcPrice).toFixed(2);
 								const balanceLabel = showSats
@@ -513,6 +550,10 @@
 	}
 
 	$effect(() => {
+		if (!browser) {
+			return;
+		}
+
 		if (!data || data.length === 0) {
 			priceHistory = [];
 			priceHistoryLoading = false;
@@ -578,6 +619,10 @@
 	});
 
 	$effect(() => {
+		if (!browser) {
+			return;
+		}
+
 		if (canvas) {
 			buildChart();
 		}

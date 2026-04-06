@@ -574,8 +574,13 @@
 					<button
 						type="button"
 						class="cursor-pointer transition-colors select-none hover:text-cyan-400"
-						onclick={() => (showSats = !showSats)}
-						aria-label="Toggle between BTC and satoshis"
+						onclick={() =>
+							copyToClipboard(
+								showSats ? satsBalance.toString() : formatBtc(btcBalance),
+								'Balance'
+							)}
+						aria-label="Copy balance to clipboard"
+						title="Click to copy balance"
 					>
 						{#if showSats}
 							{satsBalance.toLocaleString()}

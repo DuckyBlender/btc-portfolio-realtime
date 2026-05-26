@@ -8,7 +8,7 @@
 		validateAddress,
 		detectInputType,
 		deriveAddresses,
-		singleAddressToDerivied,
+		singleAddressToDerived,
 		satoshisToBtc,
 		formatBtc,
 		formatCurrency,
@@ -254,7 +254,7 @@
 					throw new Error(validation.error);
 				}
 				loadingStatus = 'Processing address...';
-				addresses = [singleAddressToDerivied(xpubInput)];
+				addresses = [singleAddressToDerived(xpubInput)];
 			} else if (detectedType === 'xpub') {
 				// XPUB mode
 				const validation = validateXPUB(xpubInput);

@@ -164,7 +164,7 @@ export function addressToScriptHash(address: string): string {
 }
 
 // Get derived address info for a single address
-export function singleAddressToDerivied(address: string): DerivedAddress {
+export function singleAddressToDerived(address: string): DerivedAddress {
 	const trimmed = address.trim();
 	const scriptHash = addressToScriptHash(trimmed);
 	

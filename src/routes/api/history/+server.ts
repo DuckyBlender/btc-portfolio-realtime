@@ -1,15 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createConnection } from 'net';
-import { connect as tlsConnect } from 'tls';
 import { createHash } from 'crypto';
 import * as bitcoin from 'bitcoinjs-lib';
-
-interface ElectrumRequest {
-	id: number;
-	method: string;
-	params: unknown[];
-}
+import { ElectrumConnection } from '$lib/server/electrum-connection';
 
 interface HistoryRequest {
 	host: string;
@@ -22,92 +15,6 @@ interface HistoryItem {
 	tx_hash: string;
 	height: number;
 	fee?: number;
-}
-
-class ElectrumConnection {
-	private socket: any;
-	private requestId = 0;
-	private pendingRequests = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
-	private buffer = '';
-
-	constructor(host: string, port: number, useSsl: boolean) {
-		this.socket = useSsl
-			? tlsConnect({ host, port, rejectUnauthorized: false })
-			: createConnection({ host, port });
-
-		this.socket.on('data', (chunk: Buffer) => {
-			this.buffer += chunk.toString();
-			const lines = this.buffer.split('\n');
-			this.buffer = lines.pop() || '';
-
-			for (const line of lines) {
-				if (!line.trim()) continue;
-				try {
-					const response = JSON.parse(line);
-					const pending = this.pendingRequests.get(response.id);
-					if (pending) {
-						this.pendingRequests.delete(response.id);
-						if (response.error) {
-							pending.reject(new Error(response.error.message));
-						} else {
-							pending.resolve(response.result);
-						}
-					}
-				} catch (e) {
-					console.error('Failed to parse response:', e);
-				}
-			}
-		});
-
-		this.socket.on('error', (err: Error) => {
-			console.error('Socket error:', err);
-			this.pendingRequests.forEach((pending) => pending.reject(err));
-			this.pendingRequests.clear();
-		});
-	}
-
-	async request(method: string, params: unknown[]): Promise<unknown> {
-		return new Promise((resolve, reject) => {
-			const id = ++this.requestId;
-			const request: ElectrumRequest = { id, method, params };
-
-			const timeout = setTimeout(() => {
-				this.pendingRequests.delete(id);
-				reject(new Error('Request timeout'));
-			}, 15000);
-
-			this.pendingRequests.set(id, {
-				resolve: (value) => {
-					clearTimeout(timeout);
-					resolve(value);
-				},
-				reject: (error) => {
-					clearTimeout(timeout);
-					reject(error);
-				}
-			});
-
-			this.socket.write(JSON.stringify(request) + '\n');
-		});
-	}
-
-	async connect(): Promise<void> {
-		return new Promise((resolve, reject) => {
-			if (this.socket.connecting) {
-				this.socket.once('connect', resolve);
-				this.socket.once('secureConnect', resolve);
-				this.socket.once('error', reject);
-			} else if (this.socket.writable) {
-				resolve();
-			} else {
-				reject(new Error('Socket not connectable'));
-			}
-		});
-	}
-
-	close() {
-		this.socket.destroy();
-	}
 }
 
 export interface AccumulationPoint {
